@@ -16,7 +16,6 @@ point_fname	dd	filename
 ; Ключ за алгоритъм 3. Дълъг е 200 символа
 super_secret_encoding_key_that_you_definitely_cannot_see_because_it_is_now_off_screen db 'A9Fj#k2X7z&3dN5y8L1pQb0WmR6@t%I*4Z!VoC^hUo+9J3wTzL2SxP8Q1M0G5V@rN3uYbF!K7WzF9XqDkJ0g3^B2otE6Z$*R5n1Yv8CqL2Tj7Hw+pI0x@3s+Y9oX4KQzU5FmB6P@W3dQ1A%J7R2TzL*o8M9V0G6bNwC3hZ!5tXyWmP7j8LkQf3Z1Y5@t9V0I7J6P+L2b'
 
-
 ; Пазим колко сме криптирали
 current_encryption db 0
 ; Съобщения за потребителя
@@ -147,6 +146,83 @@ dec_key_diff proc
 	call enc_key_diff
 	ret
 dec_key_diff endp
+
+; Algorithm 4
+; В този алгоритъм обхождаме съобщението от двата края, като 
+; променяме символите по следният начин:
+;                               | (message[i] - 100, message[j] - 100), ako message[i] == message[j]
+; eso(message[i], message[j]) = |                                                                    ,
+;                               | (message[i] + 100, message[j] + 100), иначе
+; като 0 <= i <= len(message[i]) // 2 < j < len(message)
+; Тривиално следствие е обратната функция, dso, която се променя, чрез размяна на условието.
+; Note: Името идва от това, че правим отместване на симетрични спрямо центъра символи
+enc_symm_off proc
+	xor si, si
+	mov di, read_len
+	dec di
+	mov cx, read_len
+	shr cx, 1
+
+	eso:
+		mov dl, message[si]
+		mov dh, message[di]
+		cmp dl, dh
+		jne upset
+		sub dl, 100
+		sub dh, 100
+		jmp end_eso
+		upset:
+		add dl, 100
+		add dh, 100
+		end_eso:
+		xor ax, ax
+		mov al, dl
+		and ax, 0FFh
+		mov message[si], al
+
+		mov al, dh
+		and ax, 0FFh
+		mov message[di], al
+		
+		inc si
+		dec di
+	loop eso
+	ret
+enc_symm_off endp
+
+dec_symm_off proc
+	xor si, si
+	mov di, read_len
+	dec di
+	mov cx, read_len
+	shr cx, 1
+
+	dso:
+		mov dl, message[si]
+		mov dh, message[di]
+		cmp dl, dh
+		jne downset
+		add dl, 100
+		add dh, 100
+		jmp end_eso
+		downset:
+		sub dl, 100
+		sub dh, 100
+		end_dso:
+		xor ax, ax
+		mov al, dl
+		and ax, 0FFh
+		mov message[si], al
+
+		mov al, dh
+		and ax, 0FFh
+		mov message[di], al
+		
+		inc si
+		dec di
+	loop dso
+	ret
+dec_symm_off endp
 
 ; Четец
 read_message proc
@@ -330,8 +406,13 @@ encrypt proc
 	jmp enc_end
 	ealg3:
 	cmp bl, 3
-	jne enc_err
+	jne ealg4
 	call enc_key_diff
+	jmp enc_end
+	ealg4:
+	cmp bl, 4
+	jne enc_err
+	call enc_symm_off
 	jmp enc_end
 	enc_err:
 	call new_line
@@ -363,8 +444,13 @@ decrypt proc
 	jmp dec_end
 	dalg3:
 	cmp bl, 3
-	jne dec_err
+	jne dalg4
 	call dec_key_diff
+	jmp dec_end
+	dalg4:
+	cmp bl, 4
+	jne dec_err
+	call dec_symm_off
 	jmp dec_end
 	dec_err:
 	call new_line

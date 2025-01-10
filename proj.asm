@@ -1,17 +1,17 @@
 masm
-model	small
-stack	256
+model small
+stack 256
 .data
 ; Заделяме буфер за съобщението
-handle	  dw 0 
-message    db 200 dup ('$')
+handle    dw 0 
+message   db 200 dup ('$'), '$'
 len_mes = $ - message
 point_mes dd message
 read_len  dw 0
 
 ; Обичайните неща за файлове ;)
-filename	db	'crypt.txt', 0
-point_fname	dd	filename
+filename    db 'crypt.txt', 0
+point_fname dd filename
 
 ; Ключ за алгоритъм 3. Дълъг е 200 символа
 super_secret_encoding_key_that_you_definitely_cannot_see_because_it_is_now_off_screen db 'A9Fj#k2X7z&3dN5y8L1pQb0WmR6@t%I*4Z!VoC^hUo+9J3wTzL2SxP8Q1M0G5V@rN3uYbF!K7WzF9XqDkJ0g3^B2otE6Z$*R5n1Yv8CqL2Tj7Hw+pI0x@3s+Y9oX4KQzU5FmB6P@W3dQ1A%J7R2TzL*o8M9V0G6bNwC3hZ!5tXyWmP7j8LkQf3Z1Y5@t9V0I7J6P+L2b'
@@ -19,7 +19,7 @@ super_secret_encoding_key_that_you_definitely_cannot_see_because_it_is_now_off_s
 ; Пазим колко сме криптирали
 current_encryption db 0
 ; Съобщения за потребителя
-info 		  db "Please use 1 to encrypt or 2 to decrypt! Type 0 to exit!$"
+info          db "Please use 1 to encrypt or 2 to decrypt! Type 0 to exit!$"
 invalid_input db "Illegal command.$"
 enc_error     db "Can't encrypt further!$"
 dec_error     db "Can't decrypt further!$"
@@ -31,29 +31,31 @@ write_error   db "Error while writing file!$"
 empty_error   db "File can't be empty!$"
 sep           db "---------------------------------------------------------$"
 .code
+; Начало на програмата
 main:
-	mov	ax, @data
-	mov	ds, ax
+	mov ax, @data
+	mov ds, ax
 	xor ax, ax
 	call read_message
 	call input_parser
 	jmp exit
-
 ; --- Algorithm 1 ---
 ; Разместваме буквите в съобщението по следния начин:
-; ecs(message[i]) = message[l >> 1 + l % 2 + i],
+; ems(message[i]) = message[l >> 1 + l % 2 + i],
 ; където l = len(message), 0 <= i <= l >> 1
-; Лесно се вижда, че ecs(ecs(message[i])) = message[i]
-; Note: Името идва от това, че бутаме началото в средата
+; Лесно се вижда, че ems(ems(message[i])) = message[i]
+; Note: Името идва от това, че бутаме началото след средата
 enc_mid_shuffle proc
 	xor si, si
 	xor di, di
 	mov cx, read_len
+	cmp cx, 0
+	je ret_ems
 	shr cx, 1
 	mov di, cx
-	jnc ecs
+	jnc ems
 	inc di
-	ecs:
+	ems:
 		mov dl, message[si]
 		mov dh, message[di]
 		mov message[si], dh
@@ -61,15 +63,15 @@ enc_mid_shuffle proc
 		xor dx, dx
 		inc si
 		inc di
-	loop ecs
+	loop ems
+	ret_ems:
 	ret
 enc_mid_shuffle endp
-
+; Декриптиране на същото
 dec_mid_shuffle proc
 	call enc_mid_shuffle
 	ret
 dec_mid_shuffle endp
-
 ; --- Algorithm 2 ---
 ; Обхождаме съобщението, сменяйки всеки символ по следния начин:
 ;                   | message[i] + 7, ако message[i] e четно
@@ -86,8 +88,7 @@ dec_mid_shuffle endp
 enc_odd_caesar proc
 	xor si, si
 	mov cx, read_len
-
-	emc:
+	eoc:
 		xor ax, ax
 		mov al, message[si]
 		mov dl, al
@@ -102,15 +103,14 @@ enc_odd_caesar proc
 		and ax, 0FFh
 		mov message[si], al
 		inc si
-	loop emc
+	loop eoc
 	ret
 enc_odd_caesar endp
-
+; Декриптиране на същото
 dec_odd_caesar proc
 	call enc_odd_caesar
 	ret
 dec_odd_caesar endp
-
 ; --- Algorithm 3 ---
 ; В този алгоритъм използваме ключ с прекалено дълго име така, че нека положим key = super_secret_...
 ; Ключа е дълъг 200 символа, защото това е максималната дължина на message.
@@ -141,24 +141,25 @@ enc_key_diff proc
 	loop ekd
 	ret
 enc_key_diff endp
-
+; Декриптиране на същото
 dec_key_diff proc
 	call enc_key_diff
 	ret
 dec_key_diff endp
-
 ; Algorithm 4
 ; В този алгоритъм обхождаме съобщението от двата края, като 
 ; променяме символите по следният начин:
-;                               | (message[i] - 100, message[j] - 100), ako message[i] == message[j]
+;                               | (message[i] - 99, message[j] - 99), ako message[i] == message[j]
 ; eso(message[i], message[j]) = |                                                                    ,
-;                               | (message[i] + 100, message[j] + 100), иначе
+;                               | (message[i] + 99, message[j] + 99), иначе
 ; като 0 <= i <= len(message[i]) // 2 < j < len(message)
 ; Тривиално следствие е обратната функция, dso, която се променя, чрез размяна на условието.
 ; Note: Името идва от това, че правим отместване на симетрични спрямо центъра символи
 enc_symm_off proc
 	xor si, si
 	mov di, read_len
+	cmp di, 0
+	je ret_eso
 	dec di
 	mov cx, read_len
 	shr cx, 1
@@ -168,12 +169,12 @@ enc_symm_off proc
 		mov dh, message[di]
 		cmp dl, dh
 		jne upset
-		sub dl, 100
-		sub dh, 100
+		sub dl, 99
+		sub dh, 99
 		jmp end_eso
 		upset:
-		add dl, 100
-		add dh, 100
+		add dl, 99
+		add dh, 99
 		end_eso:
 		xor ax, ax
 		mov al, dl
@@ -187,27 +188,29 @@ enc_symm_off proc
 		inc si
 		dec di
 	loop eso
+	ret_eso:
 	ret
 enc_symm_off endp
-
+; Декриптиране на същото
 dec_symm_off proc
 	xor si, si
 	mov di, read_len
+	cmp di, 0
+	je ret_dso
 	dec di
 	mov cx, read_len
 	shr cx, 1
-
 	dso:
 		mov dl, message[si]
 		mov dh, message[di]
 		cmp dl, dh
 		jne downset
-		add dl, 100
-		add dh, 100
+		add dl, 99
+		add dh, 99
 		jmp end_eso
 		downset:
-		sub dl, 100
-		sub dh, 100
+		sub dl, 99
+		sub dh, 99
 		end_dso:
 		xor ax, ax
 		mov al, dl
@@ -221,21 +224,21 @@ dec_symm_off proc
 		inc si
 		dec di
 	loop dso
+	ret_dso:
 	ret
 dec_symm_off endp
-
 ; Четец
 read_message proc
 	; open file
-	mov	al, 02h 
-	lds	dx, point_fname 
-	mov	ah, 3dh 
-	int	21h
+	mov al, 02h 
+	lds dx, point_fname 
+	mov ah, 3Dh 
+	int 21h
 	jc rd_err
 	mov handle, ax
 	; read file
 	mov bx, handle
-	mov ah, 3fh
+	mov ah, 3Fh
 	mov cx, len_mes
 	lds dx, point_mes
 	int 21h
@@ -246,7 +249,7 @@ read_message proc
 	je ety_err
 	; close file
 	mov bx, handle
-	mov ah, 3eh
+	mov ah, 3Eh
 	int 21h
 	jc rd_err
 	ret
@@ -263,29 +266,28 @@ read_message proc
 	jmp exit
 	ret
 read_message endp
-	
 ; Писец
 write_message proc
 	call print_message
 	; create file - we want to erase the previous one if there is such
-	xor	cx, cx
-	lds	dx, point_fname
-	mov	ah, 3Ch
-	int	21h
+	xor cx, cx
+	lds dx, point_fname
+	mov ah, 3Ch
+	int 21h
 	jc wr_err
 	; open file
-	mov	al, 02h 
-	lds	dx, point_fname 
-	mov	ah, 3Dh 
-	int	21h
+	mov al, 02h 
+	lds dx, point_fname 
+	mov ah, 3Dh 
+	int 21h
 	jc wr_err
 	mov handle, ax
 	; write to file
-	mov	bx, handle 
-	mov	cx, read_len
-	lds	dx, point_mes
-	mov	ah, 40h 
-	int	21h
+	mov bx, handle 
+	mov cx, read_len
+	lds dx, point_mes
+	mov ah, 40h 
+	int 21h
 	jc wr_err
 	; close file
 	mov bx, handle
@@ -300,7 +302,6 @@ write_message proc
 	jmp exit
 	ret
 write_message endp
-
 ; Входен четец
 input_parser proc
 	begin:
@@ -346,18 +347,15 @@ input_parser proc
 	int 21h
 	ret
 input_parser endp
-
 ; Нов ред
 new_line proc
 	mov ah, 02h
-    mov dl, 0Dh
-    int 21h
-
-    mov dl, 0Ah
-    int 21h
-    ret
+	mov dl, 0Dh
+	int 21h
+	mov dl, 0Ah
+	int 21h
+	ret
 new_line endp
-
 ; Разделител
 seperate proc
 	call new_line
@@ -366,7 +364,6 @@ seperate proc
 	int 21h
 	ret
 seperate endp
-
 ; Принтер
 print_message proc
 	call new_line
@@ -378,7 +375,7 @@ print_message proc
 	int 21h
 	ret
 print_message endp
-
+; Енкодинг принт
 print_enc_level proc
 	call new_line
 	mov ah, 09h
@@ -390,7 +387,7 @@ print_enc_level proc
 	int 21h
 	ret
 print_enc_level endp
-
+; За криптиране
 encrypt proc
 	mov bl, current_encryption
 	inc bl
@@ -429,7 +426,7 @@ encrypt proc
 	enc_ext:
 	ret
 encrypt endp
-
+; За разкриптиране
 decrypt proc
 	mov bl, current_encryption
 	dalg1:
@@ -468,8 +465,8 @@ decrypt proc
 	dec_ext:
 	ret
 decrypt endp
-	
+; Край ;)
 exit:
-	mov	ax,4c00h	
-	int	21h
+	mov ax, 4C00h	
+	int 21h
 end main

@@ -9,9 +9,13 @@ len_mes = $ - message
 point_mes dd message
 read_len  dw 0
 
-; Обичайните неща за файлове ;)
-filename    db 'crypt.txt', 0
-point_fname dd filename
+; Обичайните неща за файлове 
+; Файл за четене
+infile      db 'init.txt', 0
+point_ifile dd infile
+; Файл за изход
+outfile     db 'crypt.txt', 0
+point_ofile dd outfile
 
 ; Ключ за алгоритъм 3. Дълъг е 200 символа
 super_secret_encoding_key_that_you_definitely_cannot_see_because_it_is_now_off_screen db 'A9Fj#k2X7z&3dN5y8L1pQb0WmR6@t%I*4Z!VoC^hUo+9J3wTzL2SxP8Q1M0G5V@rN3uYbF!K7WzF9XqDkJ0g3^B2otE6Z$*R5n1Yv8CqL2Tj7Hw+pI0x@3s+Y9oX4KQzU5FmB6P@W3dQ1A%J7R2TzL*o8M9V0G6bNwC3hZ!5tXyWmP7j8LkQf3Z1Y5@t9V0I7J6P+L2b'
@@ -37,6 +41,7 @@ main:
 	mov ds, ax
 	xor ax, ax
 	call read_message
+	call print_message
 	call input_parser
 	jmp exit
 ; --- Algorithm 1 ---
@@ -231,7 +236,7 @@ dec_symm_off endp
 read_message proc
 	; open file
 	mov al, 02h 
-	lds dx, point_fname 
+	lds dx, point_ifile 
 	mov ah, 3Dh 
 	int 21h
 	jc rd_err
@@ -252,6 +257,12 @@ read_message proc
 	mov ah, 3Eh
 	int 21h
 	jc rd_err
+	; create file crypt.txt
+	xor cx, cx
+	lds dx, point_ofile
+	mov ah, 3Ch
+	int 21h
+	jc rd_err
 	ret
 	rd_err:
 	mov ah, 09h
@@ -269,15 +280,9 @@ read_message endp
 ; Писец
 write_message proc
 	call print_message
-	; create file - we want to erase the previous one if there is such
-	xor cx, cx
-	lds dx, point_fname
-	mov ah, 3Ch
-	int 21h
-	jc wr_err
 	; open file
 	mov al, 02h 
-	lds dx, point_fname 
+	lds dx, point_ofile 
 	mov ah, 3Dh 
 	int 21h
 	jc wr_err
@@ -394,20 +399,15 @@ encrypt proc
 	ealg1:
 	cmp bl, 1
 	jne ealg2
-	call enc_mid_shuffle
+	call enc_odd_caesar
 	jmp enc_end
 	ealg2:
 	cmp bl, 2
 	jne ealg3
-	call enc_odd_caesar
+	call enc_key_diff
 	jmp enc_end
 	ealg3:
 	cmp bl, 3
-	jne ealg4
-	call enc_key_diff
-	jmp enc_end
-	ealg4:
-	cmp bl, 4
 	jne enc_err
 	call enc_symm_off
 	jmp enc_end
@@ -432,20 +432,15 @@ decrypt proc
 	dalg1:
 	cmp bl, 1
 	jne dalg2
-	call dec_mid_shuffle
+	call dec_odd_caesar
 	jmp dec_end
 	dalg2:
 	cmp bl, 2
 	jne dalg3
-	call dec_odd_caesar
+	call dec_key_diff
 	jmp dec_end
 	dalg3:
 	cmp bl, 3
-	jne dalg4
-	call dec_key_diff
-	jmp dec_end
-	dalg4:
-	cmp bl, 4
 	jne dec_err
 	call dec_symm_off
 	jmp dec_end
